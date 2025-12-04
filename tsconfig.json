@@ -5,9 +5,14 @@
     "moduleResolution": "node",
     "declaration": true,
     "emitDeclarationOnly": true,
-    "experimentalDecorators": true
+    "experimentalDecorators": true,
+    "allowJs": false
   },
   "include": [
-    "src/**/*"
+    "src/**/*.ts",
+    "src/**/*.d.ts"
+  ],
+  "exclude": [
+    "src/**/*.js"
   ]
 }

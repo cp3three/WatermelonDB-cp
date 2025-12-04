@@ -115,7 +115,6 @@ export default class WorkQueue {
     isWriter: boolean,
   ): Promise<T> {
     // If a subAction was scheduled using subAction(), database.write/read() calls skip the line
-    console.log('%c watermelondbConsoleLogger this._subActionIncoming:', 'color: #0e93e0;background: #aaefe5;', this._subActionIncoming);
     if (this._subActionIncoming) {
       this._subActionIncoming = false
       const currentWork = this._queue[0]

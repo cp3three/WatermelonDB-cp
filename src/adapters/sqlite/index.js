@@ -220,7 +220,6 @@ export default class SQLiteAdapter implements DatabaseAdapter {
   }
 
   query(query: SerializedQuery, callback: ResultCallback<CachedQueryResult>): void {
-    console.log('%c watermelondbConsoleLogger query333:', 'color: #0e93e0;background: #aaefe5;', query);
     validateTable(query.table, this.schema)
     const { table } = query
     const [sql, args] = encodeQuery(query)
