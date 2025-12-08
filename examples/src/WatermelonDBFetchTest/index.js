@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { View, Text, Button, StyleSheet } from 'react-native';
 import FetchTestScreen from './FetchTestScreen';
 import ObserveMethodTest from './ObserveMethodTest';
+import MarkAllAsDeletedTest from './markAllAsDeleted';
 import { DatabaseProvider } from '@react-native-ohos/watermelondb/react';
 import { database } from './database';
 
@@ -18,6 +19,8 @@ export default function App() {
         return <FetchTestScreen />;
       case 'observe':
         return <ObserveMethodTest />;
+      case 'markAll':
+        return <MarkAllAsDeletedTest />;
       default: // home
         return (
           <View style={styles.container}>
@@ -30,6 +33,11 @@ export default function App() {
             <Button
               title="进入Observe测试页面"
               onPress={() => setCurrentScreen('observe')}
+              style={styles.button}
+            />
+            <Button
+              title="进入markAllAsDelted测试页面"
+              onPress={() => setCurrentScreen('markAll')}
               style={styles.button}
             />
           </View>

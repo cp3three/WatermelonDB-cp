@@ -8,8 +8,10 @@ import {
   StyleSheet,
   Alert,
   TouchableOpacity,
+  Switch,
 } from 'react-native';
-import { database } from './database'; // 导入现有数据库
+// 注意：确保 database 导入路径正确，且已正确初始化
+import { database } from './database';
 
 export default function ObserveMethodTest() {
   // 状态管理
@@ -18,15 +20,19 @@ export default function ObserveMethodTest() {
   const [observedItems, setObservedItems] = useState([]);
   const subscriptionRef = useRef(null);
   const testItemId = useRef(null);
-  // 新增：observeWithColumns 相关状态和引用
+  
+  // observeWithColumns 相关状态和引用
   const [observedColumns, setObservedColumns] = useState([]);
   const columnsSubscriptionRef = useRef(null);
   const [selectedColumns, setSelectedColumns] = useState(['title', 'author']);
 
-  // 新增：observeCount 相关状态和引用
+  // observeCount 相关状态和引用
   const [itemCount, setItemCount] = useState(0);
   const countSubscriptionRef = useRef(null);
   const [countFilter, setCountFilter] = useState('all'); // 'all' 或 'featured'
+
+  // 切换使用experimentalSubscribe的开关
+  const [useExperimentalMethods, setUseExperimentalMethods] = useState(false);
 
   // 获取集合引用
   const getArticlesCollection = () => {
@@ -46,7 +52,34 @@ export default function ObserveMethodTest() {
     setEvents(prev => [newEvent, ...prev.slice(0, 19)]);
   };
 
-  // 开始观察
+  // 通用取消订阅方法（适配不同类型的订阅返回值）
+  const unsubscribeRef = (ref) => {
+    if (ref.current) {
+      try {
+        // 适配 RxJS 订阅（有 unsubscribe 方法）
+        if (typeof ref.current.unsubscribe === 'function') {
+          ref.current.unsubscribe();
+        } 
+        // 适配 experimentalSubscribe（返回取消订阅函数）
+        else if (typeof ref.current === 'function') {
+          ref.current();
+        }
+      } catch (error) {
+        addEvent('error', `取消订阅失败: ${error.message}`);
+        console.error('Unsubscribe error:', error);
+      }
+      ref.current = null;
+    }
+  };
+
+  // 清理所有订阅
+  const cleanupSubscriptions = () => {
+    unsubscribeRef(subscriptionRef);
+    unsubscribeRef(columnsSubscriptionRef);
+    unsubscribeRef(countSubscriptionRef);
+  };
+
+  // 开始观察 - 适配experimentalSubscribe
   const startObserving = async () => {
     try {
       const collection = getArticlesCollection();
@@ -55,57 +88,85 @@ export default function ObserveMethodTest() {
       }
 
       // 取消之前的订阅
-      if (subscriptionRef.current) {
-        subscriptionRef.current.unsubscribe();
+      cleanupSubscriptions();
+
+      const methodName = useExperimentalMethods
+        ? 'experimentalSubscribe'
+        : 'observe';
+      setStatus(`正在使用${methodName}观察数据变化...`);
+      addEvent('info', `开始使用${methodName}观察articles集合的所有数据变化`);
+
+      // 创建查询
+      const query = collection.query();
+
+      // 根据开关选择不同的观察方法
+      if (useExperimentalMethods) {
+        // 使用experimentalSubscribe（无rx依赖）
+        subscriptionRef.current = query.experimentalSubscribe({
+          onUpdate: items => {
+            setObservedItems(items);
+            addEvent(
+              'update',
+              `[${methodName}] 数据更新: 共${items.length}条记录`,
+            );
+            setStatus(`最后更新: ${new Date().toLocaleTimeString()}`);
+          },
+          onError: error => {
+            addEvent('error', `[${methodName}] 观察出错: ${error.message}`);
+            setStatus('观察出错');
+            console.error('观察错误:', error);
+          },
+        });
+      } else {
+        // 使用传统的observe方法（rx依赖）
+        subscriptionRef.current = query.observe().subscribe({
+          next: items => {
+            setObservedItems(items);
+            addEvent(
+              'update',
+              `[${methodName}] 数据更新: 共${items.length}条记录`,
+            );
+            setStatus(`最后更新: ${new Date().toLocaleTimeString()}`);
+          },
+          error: error => {
+            addEvent('error', `[${methodName}] 观察出错: ${error.message}`);
+            setStatus('观察出错');
+            console.error('观察错误:', error);
+          },
+          complete: () => {
+            addEvent('info', `[${methodName}] 观察已完成`);
+            setStatus('观察已完成');
+          },
+        });
       }
 
-      setStatus('正在观察数据变化...');
-      addEvent('info', '开始观察articles集合的所有数据变化');
-
-      // 创建查询并观察
-      const query = collection.query();
-      subscriptionRef.current = query.observe().subscribe({
-        next: items => {
-          setObservedItems(items);
-          addEvent('update', `数据更新: 共${items.length}条记录`);
-          setStatus(`最后更新: ${new Date().toLocaleTimeString()}`);
-        },
-        error: error => {
-          addEvent('error', `观察出错: ${error.message}`);
-          setStatus('观察出错');
-          console.error('观察错误:', error);
-        },
-        complete: () => {
-          addEvent('info', '观察已完成');
-          setStatus('观察已完成');
-        },
-      });
-
       // 创建一个测试项目
-      await database.write(async () => {
-        const newItem = await collection.create(item => {
-          item.title = 'Observe测试项目';
-          item.author = '测试脚本';
-          item.publishDate = Date.now();
-          item.isFeatured = false;
+      if (!testItemId.current) {
+        await database.write(async () => {
+          const newItem = await collection.create(item => {
+            item.title = 'Observe测试项目';
+            item.author = '测试脚本';
+            item.publishDate = Date.now();
+            item.isFeatured = false;
+          });
+          testItemId.current = newItem.id;
+          addEvent('success', `已创建测试项目，ID: ${newItem.id}`);
         });
-        testItemId.current = newItem.id;
-        addEvent('success', `已创建测试项目，ID: ${newItem.id}`);
-      });
+      }
     } catch (error) {
-      addEvent('error', `启动观察失败: ${error.message}`);
+      addEvent(
+        'error',
+        `[${useExperimentalMethods ? 'experimentalSubscribe' : 'observe'}] 启动观察失败: ${error.message}`,
+      );
       setStatus('启动观察失败');
     }
   };
 
-  // 停止观察
+  // 停止观察（修复：使用通用取消订阅方法）
   const stopObserving = () => {
-    if (subscriptionRef.current) {
-      subscriptionRef.current.unsubscribe();
-      subscriptionRef.current = null;
-      setStatus('已停止观察');
-      addEvent('info', '已停止观察数据变化');
-    }
+    unsubscribeRef(subscriptionRef);
+    setStatus('已停止观察');
+    addEvent('info', '已停止观察数据变化');
   };
 
   // 更新测试项目
@@ -158,15 +219,7 @@ export default function ObserveMethodTest() {
     }
   };
 
-  // 组件卸载时确保取消订阅
-  useEffect(() => {
-    return () => {
-      if (subscriptionRef.current) {
-        subscriptionRef.current.unsubscribe();
-      }
-    };
-  }, []);
-  // 新增：开始观察指定列
+  // 开始观察指定列 - 适配experimentalSubscribeWithColumns
   const startObservingColumns = async () => {
     try {
       const collection = getArticlesCollection();
@@ -175,54 +228,77 @@ export default function ObserveMethodTest() {
       }
 
       // 取消之前的订阅
-      if (columnsSubscriptionRef.current) {
-        columnsSubscriptionRef.current.unsubscribe();
-      }
+      unsubscribeRef(columnsSubscriptionRef);
 
+      const methodName = useExperimentalMethods
+        ? 'experimentalSubscribeWithColumns'
+        : 'observeWithColumns';
       addEvent(
         'info',
-        `[observeWithColumns] 开始观察指定列: ${selectedColumns.join(', ')}`,
+        `[${methodName}] 开始观察指定列: ${selectedColumns.join(', ')}`,
       );
 
       // 创建查询并观察指定列
       const query = collection.query();
-      columnsSubscriptionRef.current = query
-        .observeWithColumns(selectedColumns)
-        .subscribe({
-          next: items => {
-            setObservedColumns(items);
-            addEvent(
-              'update',
-              `[observeWithColumns] 数据更新: 共${items.length}条记录`,
-            );
+
+      if (useExperimentalMethods) {
+        // 使用experimentalSubscribeWithColumns
+        columnsSubscriptionRef.current = query.experimentalSubscribeWithColumns(
+          selectedColumns,
+          {
+            onUpdate: items => {
+              setObservedColumns(items);
+              addEvent(
+                'update',
+                `[${methodName}] 数据更新: 共${items.length}条记录`,
+              );
+            },
+            onError: error => {
+              addEvent('error', `[${methodName}] 观察出错: ${error.message}`);
+              console.error('观察列错误:', error);
+            },
           },
-          error: error => {
-            addEvent(
-              'error',
-              `[observeWithColumns] 观察出错: ${error.message}`,
-            );
-            console.error('观察列错误:', error);
-          },
-          complete: () => {
-            addEvent('info', '[observeWithColumns] 观察已完成');
-          },
-        });
+        );
+      } else {
+        // 使用传统的observeWithColumns
+        columnsSubscriptionRef.current = query
+          .observeWithColumns(selectedColumns)
+          .subscribe({
+            next: items => {
+              setObservedColumns(items);
+              addEvent(
+                'update',
+                `[${methodName}] 数据更新: 共${items.length}条记录`,
+              );
+            },
+            error: error => {
+              addEvent('error', `[${methodName}] 观察出错: ${error.message}`);
+              console.error('观察列错误:', error);
+            },
+            complete: () => {
+              addEvent('info', `[${methodName}] 观察已完成`);
+            },
+          });
+      }
     } catch (error) {
-      addEvent('error', `[observeWithColumns] 启动观察失败: ${error.message}`);
+      addEvent(
+        'error',
+        `[${useExperimentalMethods ? 'experimentalSubscribeWithColumns' : 'observeWithColumns'}] 启动观察失败: ${error.message}`,
+      );
     }
   };
 
-  // 新增：停止观察指定列
+  // 停止观察指定列（修复：使用通用取消订阅方法）
   const stopObservingColumns = () => {
-    if (columnsSubscriptionRef.current) {
-      columnsSubscriptionRef.current.unsubscribe();
-      columnsSubscriptionRef.current = null;
-      setObservedColumns([]);
-      addEvent('info', '[observeWithColumns] 已停止观察指定列');
-    }
+    unsubscribeRef(columnsSubscriptionRef);
+    setObservedColumns([]);
+    const methodName = useExperimentalMethods
+      ? 'experimentalSubscribeWithColumns'
+      : 'observeWithColumns';
+    addEvent('info', `[${methodName}] 已停止观察指定列`);
   };
 
-  // 新增：切换列选择
+  // 切换列选择
   const toggleColumn = column => {
     setSelectedColumns(prev =>
       prev.includes(column)
@@ -231,7 +307,7 @@ export default function ObserveMethodTest() {
     );
   };
 
-  // 新增：开始观察计数
+  // 开始观察计数
   const startObservingCount = async () => {
     try {
       const collection = getArticlesCollection();
@@ -240,9 +316,7 @@ export default function ObserveMethodTest() {
       }
 
       // 取消之前的订阅
-      if (countSubscriptionRef.current) {
-        countSubscriptionRef.current.unsubscribe();
-      }
+      unsubscribeRef(countSubscriptionRef);
 
       // 创建带过滤条件的查询
       let query = collection.query();
@@ -272,17 +346,14 @@ export default function ObserveMethodTest() {
     }
   };
 
-  // 新增：停止观察计数
+  // 停止观察计数（修复：使用通用取消订阅方法）
   const stopObservingCount = () => {
-    if (countSubscriptionRef.current) {
-      countSubscriptionRef.current.unsubscribe();
-      countSubscriptionRef.current = null;
-      setItemCount(0);
-      addEvent('info', '[observeCount] 已停止观察计数');
-    }
+    unsubscribeRef(countSubscriptionRef);
+    setItemCount(0);
+    addEvent('info', '[observeCount] 已停止观察计数');
   };
 
-  // 新增：切换计数过滤器
+  // 切换计数过滤器
   const changeCountFilter = filter => {
     setCountFilter(filter);
     // 如果正在观察，重新启动观察以应用新的过滤器
@@ -291,18 +362,12 @@ export default function ObserveMethodTest() {
     }
   };
 
-  // 组件卸载时确保取消所有订阅
+  // 组件卸载时清理所有订阅（修复核心：移除错误代码，完整清理所有订阅）
   useEffect(() => {
+    // 组件卸载时执行清理
     return () => {
-      if (subscriptionRef.current) {
-        subscriptionRef.current.unsubscribe();
-      }
-      if (columnsSubscriptionRef.current) {
-        columnsSubscriptionRef.current.unsubscribe();
-      }
-      if (countSubscriptionRef.current) {
-        countSubscriptionRef.current.unsubscribe();
-      }
+      cleanupSubscriptions();
+      addEvent('info', '组件卸载，已清理所有订阅');
     };
   }, []);
 
@@ -332,7 +397,7 @@ export default function ObserveMethodTest() {
     );
   };
 
-  // 新增：渲染观察到的列数据
+  // 渲染观察到的列数据
   const renderObservedColumnItem = (item, index) => {
     return (
       <View key={index} style={styles.columnItem}>
@@ -345,10 +410,27 @@ export default function ObserveMethodTest() {
       </View>
     );
   };
+
   return (
     <ScrollView style={styles.container}>
       <Text style={styles.title}>WatermelonDB 观察方法测试</Text>
-
+      {/* 方法切换开关 */}
+      <View style={styles.switchContainer}>
+        <Text style={styles.switchLabel}>
+          使用Experimental方法（无Rx依赖）:
+        </Text>
+        <Switch
+          value={useExperimentalMethods}
+          onValueChange={setUseExperimentalMethods}
+          trackColor={{ false: '#767577', true: '#81b0ff' }}
+          thumbColor={useExperimentalMethods ? '#f5dd4b' : '#f4f3f4'}
+        />
+        <Text style={styles.switchDescription}>
+          {useExperimentalMethods
+            ? '当前：experimentalSubscribe / experimentalSubscribeWithColumns'
+            : '当前：observe / observeWithColumns'}
+        </Text>
+      </View>
       <View style={styles.statusBar}>
         <Text style={styles.statusText}>状态: {status}</Text>
       </View>
@@ -367,7 +449,7 @@ export default function ObserveMethodTest() {
         </View>
       </View>
 
-      {/* 新增 observeWithColumns() 测试区域 */}
+      {/* observeWithColumns() 测试区域 */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>
           2. observeWithColumns() 方法测试
@@ -412,7 +494,7 @@ export default function ObserveMethodTest() {
         </View>
       </View>
 
-      {/* 新增 observeCount() 测试区域 */}
+      {/* observeCount() 测试区域 */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>3. observeCount() 方法测试</Text>
         <Text style={styles.sectionDescription}>选择计数过滤条件:</Text>
@@ -486,6 +568,30 @@ const styles = StyleSheet.create({
     color: '#333',
     textAlign: 'center',
   },
+  // 开关样式
+  switchContainer: {
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+  },
+  switchLabel: {
+    fontSize: 16,
+    marginRight: 10,
+    flex: 1,
+  },
+  switchDescription: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 8,
+    width: '100%',
+  },
   section: {
     backgroundColor: 'white',
     padding: 16,
@@ -556,5 +662,79 @@ const styles = StyleSheet.create({
     color: '#888',
     textAlign: 'center',
     padding: 16,
+  },
+  // 补充缺失的样式（避免渲染警告）
+  sectionDescription: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 12,
+  },
+  columnsSelector: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  columnButton: {
+    padding: 8,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  selectedColumn: {
+    backgroundColor: '#81b0ff',
+    borderColor: '#2196f3',
+  },
+  columnButtonText: {
+    fontSize: 14,
+    color: '#333',
+  },
+  observedDataContainer: {
+    marginTop: 16,
+  },
+  dataTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  columnItem: {
+    padding: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  columnText: {
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  columnLabel: {
+    fontWeight: 'bold',
+    color: '#555',
+  },
+  noDataText: {
+    fontSize: 14,
+    color: '#888',
+    padding: 8,
+    textAlign: 'center',
+  },
+  filterSelector: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  filterButton: {
+    padding: 8,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    flex: 1,
+    alignItems: 'center',
+  },
+  selectedFilter: {
+    backgroundColor: '#ffccbc',
+    borderColor: '#ff5722',
+  },
+  filterButtonText: {
+    fontSize: 14,
+    color: '#333',
   },
 });
