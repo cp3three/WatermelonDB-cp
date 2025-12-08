@@ -769,7 +769,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 8,
     margin: 14, // 🔧 改为margin，适配安全区
-    marginTop: 40,
+    marginTop: 10,
     marginBottom: 0,
   },
 
