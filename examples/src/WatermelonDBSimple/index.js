@@ -264,44 +264,91 @@ const MovieScreen = () => {
     });
   }, [databaseInstance, moviesCollection]);
 
-  const testRelations = useCallback(async () => {
+  // 1. 测试关联查询：查询指定电影的所有评论
+  const testRelationQuery = useCallback(async () => {
+    if (movies.length === 0) {
+      Alert.alert("提示", "请先添加电影数据");
+      return;
+    }
     try {
+      const targetMovie = movies[0]; // 取第一个电影
+      const reviews = await targetMovie.reviews.fetch(); // 测试 Relation.fetch()
+      const reviewTexts = reviews.map(r => r.body).join("\n- ");
+      Alert.alert(
+        `电影《${targetMovie.title}》的评论`,
+        reviewTexts || "暂无评论"
+      );
+    } catch (error) {
+      console.error("关联查询测试失败", error);
+      Alert.alert("错误", "关联查询测试失败：" + error.message);
+    }
+  }, [movies]);
+
+  // 2. 测试批量添加评论（测试 has_many 关联批量操作）
+  const testBulkAddReviews = useCallback(async () => {
+    if (movies.length === 0) {
+      Alert.alert("提示", "请先添加电影数据");
+      return;
+    }
+    try {
+      const targetMovie = movies[0];
       await databaseInstance.write(async () => {
-        // 1. 创建测试电影
-        const testMovie = await moviesCollection.create(movie => {
-          movie.title = '测试电影 - 关联测试';
-          movie.genre = '测试';
-          movie.description = '用于测试 Movie 与 Review 的关联关系';
-          movie.releaseDateAt = new Date();
-        });
-        console.log('创建测试电影:', testMovie.id);
-
-        // 2. 为测试电影添加评论
-        const testReview = await testMovie.addReview('这是一条测试评论');
-        console.log('创建测试评论:', testReview.id);
-
-        // 3. 验证关联关系 - 从评论找电影
-        const relatedMovie = await testReview.movie.fetch();
-        if (relatedMovie.id !== testMovie.id) {
-          throw new Error(`评论关联电影失败: 期望 ${testMovie.id}，实际 ${relatedMovie.id}`);
+        // 批量添加3条评论
+        for (let i = 0; i < 3; i++) {
+          await targetMovie.addReview(`批量测试评论 ${i + 1}：${randomItem(SAMPLE_REVIEWS)}`);
         }
+      });
+      Alert.alert("成功", `已为《${targetMovie.title}》批量添加3条评论`);
+    } catch (error) {
+      console.error("批量添加评论测试失败", error);
+      Alert.alert("错误", "批量添加评论失败：" + error.message);
+    }
+  }, [movies, databaseInstance]);
 
-        // 4. 验证关联关系 - 从电影找评论
-        const movieReviews = await testMovie.reviews.fetch();
-        if (movieReviews.length !== 1 || movieReviews[0].id !== testReview.id) {
-          throw new Error(`电影关联评论失败: 期望 1 条评论，实际 ${movieReviews.length} 条`);
-        }
-
-        // 5. 清理测试数据
-        await testMovie.deleteMovie();
-        
-        Alert.alert('测试成功', 'Movie 与 Review 关联关系验证通过');
+  // 3. 测试事务回滚（故意制造错误，验证事务原子性）
+  const testTransactionRollback = useCallback(async () => {
+    if (movies.length === 0) {
+      Alert.alert("提示", "请先添加电影数据");
+      return;
+    }
+    try {
+      const targetMovie = movies[0];
+      await databaseInstance.write(async () => {
+        // 第一步：正常添加评论
+        await targetMovie.addReview("事务测试：这是一条正常评论");
+        // 第二步：故意抛出错误，验证事务回滚（上面的评论应被撤销）
+        throw new Error("故意触发事务回滚测试");
       });
     } catch (error) {
-      console.error('关联测试失败:', error);
-      Alert.alert('测试失败', `关联关系验证出错: ${error.message}`);
+      console.warn("事务回滚测试触发", error.message);
+      // 验证评论是否被回滚
+      const reviews = await targetMovie.reviews.fetch();
+      const hasTestReview = reviews.some(r => r.body.includes("事务测试"));
+      Alert.alert(
+        "事务回滚测试结果",
+        hasTestReview 
+          ? "测试失败：事务未回滚" 
+          : "测试成功：事务已回滚（错误前的操作被撤销）"
+      );
     }
-  }, [databaseInstance, moviesCollection]);
+  }, [movies, databaseInstance]);
+
+  // 在 MovieScreen 组件的 useCallback 方法区域添加
+  const deleteReview = useCallback(
+    async (review) => {
+      try {
+        await databaseInstance.write(async () => {
+          await review.deleteReview(); // 调用 Review 模型的 deleteReview 方法
+        });
+        Alert.alert("成功", "评论已删除");
+      } catch (error) {
+        console.error("删除评论失败", error);
+        Alert.alert("错误", `删除评论失败: ${error.message}`);
+      }
+    },
+    [databaseInstance]
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -310,7 +357,9 @@ const MovieScreen = () => {
           <ActionButton label="导入示例电影" onPress={seedDemoData} />
           <ActionButton label="随机新增" type="secondary" onPress={addRandomMovie} />
           <ActionButton label="清空所有" type="danger" onPress={clearAll} />
-          <ActionButton label="测试关联关系" type="secondary" onPress={testRelations} />
+          <ActionButton label="测试关联查询" type="secondary" onPress={testRelationQuery} />
+          <ActionButton label="测试批量添加评论" onPress={testBulkAddReviews} />
+          <ActionButton label="测试事务回滚" type="danger" onPress={testTransactionRollback} />
         </View>
         <Text style={styles.countText}>当前共有 {movies.length} 部电影</Text>
         {loading ? (
