@@ -2,7 +2,6 @@
 import React, { useState } from 'react';
 import { View, Text, Button, StyleSheet, TextInput } from 'react-native';
 import SQLiteAdapter from '@react-native-ohos/watermelondb/adapters/sqlite';
-// import  LocalStorage  from '@react-native-ohos/watermelondb/Database/LocalStorage';
 import Database from '@react-native-ohos/watermelondb/Database';
 import { mySchema } from './models/schema';
 import { dbModels } from './models/index.js';

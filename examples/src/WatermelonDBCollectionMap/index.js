@@ -8,8 +8,6 @@ import {
   SafeAreaView,
 } from 'react-native';
 
-// 模拟依赖（若项目已有真实依赖，可替换为实际导入路径）
-// 替换提示：将下方 mock 代码删除，改为项目真实导入
 import { mockDatabaseSchema } from './models/schema';
 const mockDatabase = () => ({
   db: {
