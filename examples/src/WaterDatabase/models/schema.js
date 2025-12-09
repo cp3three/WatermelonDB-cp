@@ -1,5 +1,5 @@
 
-import { appSchema, tableSchema } from '@nozbe/watermelondb';
+import { appSchema, tableSchema } from '@react-native-ohos/watermelondb';
 
 export default appSchema({
   version: 1,

@@ -1,6 +1,6 @@
 
-import { Model } from '@nozbe/watermelondb';
-import { field, text, date, readonly, relation } from '@nozbe/watermelondb/decorators';
+import { Model } from '@react-native-ohos/watermelondb';
+import { field, text, date, readonly, relation } from '@react-native-ohos/watermelondb/decorators';
 
 // 主测试模型
 export class TestItem extends Model {

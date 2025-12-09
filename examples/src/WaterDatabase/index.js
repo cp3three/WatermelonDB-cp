@@ -2,8 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, Button, ScrollView, StyleSheet, TextInput } from 'react-native';
 import { database } from './models/database';
-import { Q } from '@nozbe/watermelondb';
-import { DatabaseProvider } from '@nozbe/watermelondb/react';
+import { Q } from '@react-native-ohos/watermelondb';
+import { DatabaseProvider } from '@react-native-ohos/watermelondb/react';
 
 
 // 获取集合引用

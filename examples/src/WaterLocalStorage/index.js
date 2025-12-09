@@ -10,7 +10,7 @@ const adapter = new SQLiteAdapter({
   schema: mySchema,
   jsi: false,
   onSetUpError: (error) => {
-    console.error('[WatermelonDemo] 初始化数据库失败', error);
+    console.error('[LocalStorage] 初始化数据库失败', error);
   },
 });
 

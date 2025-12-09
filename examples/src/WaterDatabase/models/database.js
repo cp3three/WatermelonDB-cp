@@ -1,9 +1,9 @@
 // 新增：SQLite适配器配置（适配鸿蒙RN）
 
 // examples/src/WatermelonDBSimple/database.js
-import { Database } from '@nozbe/watermelondb';
+import { Database } from '@react-native-ohos/watermelondb';
 // 替换LokiJSAdapter为SQLiteAdapter
-import SQLiteAdapter from '@nozbe/watermelondb/adapters/sqlite';
+import SQLiteAdapter from '@react-native-ohos/watermelondb/adapters/sqlite';
 import schema from './schema';
 import { TestItem, TestComment } from './index';
 

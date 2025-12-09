@@ -16,11 +16,12 @@ import { mySchema } from './models/schema';
 import { dbModels } from './models/index.js';
 
 const adapter = new SQLiteAdapter({
-  dbName: 'WatermelonDemo',
+  dbName: 'WatermelonRelationDemo',
   schema: mySchema,
   jsi: false,
+  log: (sql) => console.log('SQL执行:', sql),
   onSetUpError: (error) => {
-    console.error('[WatermelonDemo] 初始化数据库失败', error);
+    console.error('[WatermelonDemo*] 初始化数据库失败', error);
   },
 });
 
@@ -263,17 +264,53 @@ const MovieScreen = () => {
     });
   }, [databaseInstance, moviesCollection]);
 
+  const testRelations = useCallback(async () => {
+    try {
+      await databaseInstance.write(async () => {
+        // 1. 创建测试电影
+        const testMovie = await moviesCollection.create(movie => {
+          movie.title = '测试电影 - 关联测试';
+          movie.genre = '测试';
+          movie.description = '用于测试 Movie 与 Review 的关联关系';
+          movie.releaseDateAt = new Date();
+        });
+        console.log('创建测试电影:', testMovie.id);
+
+        // 2. 为测试电影添加评论
+        const testReview = await testMovie.addReview('这是一条测试评论');
+        console.log('创建测试评论:', testReview.id);
+
+        // 3. 验证关联关系 - 从评论找电影
+        const relatedMovie = await testReview.movie.fetch();
+        if (relatedMovie.id !== testMovie.id) {
+          throw new Error(`评论关联电影失败: 期望 ${testMovie.id}，实际 ${relatedMovie.id}`);
+        }
+
+        // 4. 验证关联关系 - 从电影找评论
+        const movieReviews = await testMovie.reviews.fetch();
+        if (movieReviews.length !== 1 || movieReviews[0].id !== testReview.id) {
+          throw new Error(`电影关联评论失败: 期望 1 条评论，实际 ${movieReviews.length} 条`);
+        }
+
+        // 5. 清理测试数据
+        await testMovie.deleteMovie();
+        
+        Alert.alert('测试成功', 'Movie 与 Review 关联关系验证通过');
+      });
+    } catch (error) {
+      console.error('关联测试失败:', error);
+      Alert.alert('测试失败', `关联关系验证出错: ${error.message}`);
+    }
+  }, [databaseInstance, moviesCollection]);
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.title}>WatermelonDB 示例</Text>
-        <Text style={styles.subtitle}>
-          这是一个本地 SQLite 数据库示例，展示新增、查询、更新、删除等操作，并且列表会随数据库变化实时刷新。
-        </Text>
         <View style={styles.actionRow}>
           <ActionButton label="导入示例电影" onPress={seedDemoData} />
           <ActionButton label="随机新增" type="secondary" onPress={addRandomMovie} />
           <ActionButton label="清空所有" type="danger" onPress={clearAll} />
+          <ActionButton label="测试关联关系" type="secondary" onPress={testRelations} />
         </View>
         <Text style={styles.countText}>当前共有 {movies.length} 部电影</Text>
         {loading ? (
@@ -296,7 +333,7 @@ const MovieScreen = () => {
   );
 };
 
-export default function WatermelonDemo() {
+export default function WatermelonRelaDemo() {
   console.log('%c watermelondbConsoleLogger WatermelonDemo:', 'color: #0e93e0;background: #aaefe5;', 'WatermelonDemo');
   return (
     <DatabaseProvider database={database}>
