@@ -16,6 +16,11 @@ const WatermelonDBSimpleBase = () => {
   const [itemId, setItemId] = useState('');
   const [storageKey, setStorageKey] = useState('test_key');
   const [storageValue, setStorageValue] = useState('test_value');
+
+  // 在组件内部状态中添加
+  const [subscription, setSubscription] = useState(null);
+  const [tableChanges, setTableChanges] = useState([]);
+  
   // 自定义时间格式化函数（替代 toLocaleTimeString，无任何原生依赖）
     const formatTime = (date = new Date()) => {
         // 获取时分秒，并补零（保证格式：HH:MM:SS）
@@ -169,6 +174,107 @@ const WatermelonDBSimpleBase = () => {
     addLog('组件初始化完成，可开始测试');
   }, []);
 
+  // 测试 6: 测试 experimentalSubscribe 全局变化订阅
+const testExperimentalSubscribe = async () => {
+  try {
+    if (subscription) {
+      subscription.unsubscribe();
+      setSubscription(null);
+      addLog('已取消全局变化订阅');
+      return;
+    }
+
+    const sub = database.experimentalSubscribe(changes => {
+      addLog(`全局变化通知: ${JSON.stringify(changes)}`);
+    });
+
+    setSubscription(sub);
+    addLog('已开启全局变化订阅（创建/更新项可触发）');
+  } catch (error) {
+    addLog(`全局订阅失败: ${error.message}`);
+  }
+};
+
+// 测试 7: 测试 withChangesForTables 特定表变化监听
+const testWithChangesForTables = async () => {
+  try {
+    if (subscription) {
+      subscription.unsubscribe();
+      setSubscription(null);
+      setTableChanges([]);
+      addLog('已取消表变化监听');
+      return;
+    }
+
+    const tablesToWatch = ['test_items'];
+    const sub = database.withChangesForTables(tablesToWatch, changes => {
+      const newChange = {
+        time: formatTime(),
+        changes: JSON.stringify(changes)
+      };
+      setTableChanges(prev => [...prev.slice(-4), newChange]);
+      addLog(`表 ${tablesToWatch} 变化: ${JSON.stringify(changes)}`);
+    });
+
+    setSubscription(sub);
+    addLog(`已开启表 ${tablesToWatch} 变化监听`);
+  } catch (error) {
+    addLog(`表变化监听失败: ${error.message}`);
+  }
+};
+
+// 测试 8: 测试 experimentalBatchNotifications 批量通知
+const testExperimentalBatchNotifications = async () => {
+  try {
+    database.experimentalBatchNotifications(true);
+    addLog('已开启批量通知模式');
+    
+    // 执行批量操作验证通知合并效果
+    await database.write(async () => {
+      const operations = [];
+      // 创建3个项目模拟批量操作
+      for (let i = 0; i < 3; i++) {
+        const item = itemsCollection.prepareCreate(item => {
+          item.name = `批量通知测试_${i}`;
+          item.value = i;
+          item.isActive = true;
+        });
+        operations.push(item);
+      }
+      await database.batch(...operations);
+      addLog('批量操作完成，检查通知是否合并');
+    });
+
+    // 关闭批量通知模式
+    database.experimentalBatchNotifications(false);
+    addLog('已关闭批量通知模式');
+  } catch (error) {
+    addLog(`批量通知测试失败: ${error.message}`);
+  }
+};
+
+// 测试 9: 测试 _fatalError 致命错误处理
+const testFatalError = async () => {
+  try {
+    // 保存原始错误处理函数
+    const originalErrorHandler = database._fatalError;
+    
+    // 自定义错误处理
+    database._fatalError = (error) => {
+      addLog(`捕获致命错误: ${error.message}`);
+      // 恢复原始处理
+      database._fatalError = originalErrorHandler;
+    };
+
+    // 触发一个可能导致致命错误的操作（例如使用无效ID查询）
+    await database.read(async () => {
+      await itemsCollection.find('invalid_id_that_will_cause_error');
+    });
+  } catch (error) {
+    addLog(`致命错误测试触发: ${error.message}`);
+  }
+};
+
   return (
     <DatabaseProvider database={database}>
       <View style={styles.container}>
@@ -214,6 +320,11 @@ const WatermelonDBSimpleBase = () => {
           <Button title="6. 条件查询" onPress={testQuery} />
           <Button title="7. 本地存储" onPress={testLocalStorage} />
           <Button title="8. 重置数据库" onPress={testResetDatabase} color="red" />
+
+          <Button title="9. 测试全局订阅" onPress={testExperimentalSubscribe} />
+          <Button title="10. 测试表变化监听" onPress={testWithChangesForTables} />
+          <Button title="11. 测试批量通知" onPress={testExperimentalBatchNotifications} />
+          <Button title="12. 测试致命错误" onPress={testFatalError} color="orange" />
         </View>
 
         {/* 日志区 */}
@@ -225,6 +336,19 @@ const WatermelonDBSimpleBase = () => {
             ))}
           </ScrollView>
         </View>
+
+        {tableChanges.length > 0 && (
+          <View style={styles.logContainer}>
+            <Text style={styles.logTitle}>表变化记录</Text>
+            <ScrollView style={styles.log}>
+              {tableChanges.map((change, i) => (
+                <Text key={i} style={styles.logEntry}>
+                  [{change.time}] {change.changes}
+                </Text>
+              ))}
+            </ScrollView>
+          </View>
+        )}
       </View>
     </DatabaseProvider>
   );

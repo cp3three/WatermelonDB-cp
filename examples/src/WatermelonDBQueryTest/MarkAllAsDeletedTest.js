@@ -1,4 +1,4 @@
-// MarkAllAsDeletedTest.js (修复deletedCount不更新问题)
+// MarkAllAsDeletedTest.js 
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
@@ -13,7 +13,7 @@ import {
 import { database } from './database';
 import { Q } from '@react-native-ohos/watermelondb';
 
-// 生成唯一ID的辅助函数（彻底修复key重复问题）
+// 生成唯一ID的辅助函数
 let keyCounter = 0; // 修复：初始化计数器变量
 const generateUniqueKey = () => {
   const timestamp = Date.now();
@@ -59,7 +59,7 @@ export default function MarkAllAsDeletedTest() {
   // 新增：跟踪所有有效ID，避免选中不存在的ID
   const [allItemIds, setAllItemIds] = useState([]);
 
-  // 获取集合引用（增加更严格的校验）
+  // 获取集合引用
   const getCollection = () => {
     if (!database) {
       addEvent('error', '数据库实例未初始化');
@@ -84,7 +84,7 @@ export default function MarkAllAsDeletedTest() {
     }
   };
 
-  // 添加事件日志（确保使用修复后的key生成器）
+  // 添加事件日志
   const addEvent = (type, message) => {
     const newItem = {
       id: generateUniqueKey(), // 现在生成的key绝对唯一
@@ -95,7 +95,7 @@ export default function MarkAllAsDeletedTest() {
     setEvents(prev => [newItem, ...prev.slice(0, 29)]);
   };
 
-  // 创建测试数据（修复dateFormat not implemented错误）
+  // 创建测试数据
   const createTestData = async (count = 5) => {
     if (operationInProgress.current) {
       Alert.alert('提示', '操作正在进行中，请稍候');
@@ -144,7 +144,7 @@ export default function MarkAllAsDeletedTest() {
     }
   };
 
-  // 终极修复：testMarkAllAsDeleted 方法（彻底解决dateFormat + 已删除项为空问题）
+  // 终极修复：testMarkAllAsDeleted 方法
   const testMarkAllAsDeleted = async () => {
     if (operationInProgress.current) {
       Alert.alert('提示', '操作正在进行中，请稍候');
@@ -159,22 +159,22 @@ export default function MarkAllAsDeletedTest() {
       const collection = getCollection();
       if (!collection) throw new Error('无法获取集合');
 
-      // 核心修复：在删除前主动修复所有日期字段（而非失败后重试）
+      // 核心修复：在删除前主动修复所有日期字段
       let totalFixed = 0;
       await database.write(async () => {
         const query = collection.query();
         const allItems = await query.fetch({ withDeleted: true });
 
-        // 第一步：批量修复所有记录的日期字段（主动修复，避免后续报错）
+        // 第一步：批量修复所有记录的日期字段
         addEvent('debug', `开始修复${allItems.length}条记录的日期字段`);
         for (const item of allItems) {
           await item.update(record => {
-            // 修复created_at字段（数字→ISO字符串）
+            // 修复created_at字段
             if (record.created_at && typeof record.created_at === 'number') {
               record.created_at = formatDateForWatermelon(record.created_at);
               totalFixed++;
             }
-            // 兼容其他可能的日期字段（防止遗漏）
+            // 兼容其他可能的日期字段
             if (record.updated_at && typeof record.updated_at === 'number') {
               record.updated_at = formatDateForWatermelon(record.updated_at);
               totalFixed++;
@@ -183,8 +183,7 @@ export default function MarkAllAsDeletedTest() {
         }
         addEvent('debug', `日期字段修复完成，共修复${totalFixed}个日期字段`);
 
-        // 第二步：改用遍历删除（替代markAllAsDeleted，避开批量校验坑）
-        // 为什么不用markAllAsDeleted？OHOS版本批量操作对日期格式零容错
+        // 第二步：改用遍历删除
         const itemsToDelete = await query.fetch({ withDeleted: true });
         const deletedIds = [];
         for (const item of itemsToDelete) {
@@ -197,7 +196,7 @@ export default function MarkAllAsDeletedTest() {
           `遍历删除完成，已标记${deletedIds.length}条记录为删除，ID: [${deletedIds.join(', ')}]`,
         );
 
-        // 事务内立即验证（确保删除生效）
+        // 事务内立即验证
         const updatedItems = await query.fetch({ withDeleted: true });
         const actuallyDeleted = updatedItems.filter(
           item => item._status === 'deleted' || item._status === 'tombstone',
@@ -211,7 +210,6 @@ export default function MarkAllAsDeletedTest() {
       addEvent('success', '所有项目已标记为删除（日期修复+遍历删除）');
       setStatus('markAllAsDeleted执行完成');
 
-      // 强化验证逻辑（确保UI统计更新）
       const verifyDeletion = async (attempt = 1) => {
         const allItems = await collection.query().fetch({ withDeleted: true });
         const deletedItems = allItems.filter(

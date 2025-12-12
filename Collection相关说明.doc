@@ -1,0 +1,131 @@
+﻿
+文档名称	WatermelonDB Collection 方法整合设计文档
+一、文档概述
+1.1 设计目的
+整合 WatermelonDBComplex 示例中涉及的 Collection 核心方法，标准化数据操作流程，降低复杂业务场景下的使用成本，同时明确方法的使用规范、参数要求和最佳实践，为开发人员提供可落地的操作指南。
+1.2 背景
+WatermelonDB 是一款高性能的移动端数据库，Collection 作为其核心模块，承担了数据的 CRUD、查询、订阅等核心操作。WatermelonDBComplex 示例中分散展示了 Collection 的各类用法，本文档将其系统化整合，适配多模型关联（如 Project/Task/Subtask）、响应式 UI、批量数据操作等复杂场景。
+1.3 核心术语
+术语	定义
+Collection	数据表抽象，对应 WatermelonDB 中某一类模型的数据集（如 projects/tasks）
+SQLiteAdapter	WatermelonDB 与 SQLite 底层交互的适配器，负责数据库初始化与连接
+Observable	可观察对象，用于订阅数据变化，实现 UI 响应式更新
+Query Builder	WatermelonDB 内置的查询构建器（Q），用于构建条件 / 排序 / 关联查询
+原子操作	通过 database.write 包裹的操作，保证数据修改的原子性（要么全成，要么全败）
+二、核心模块设计：Collection 方法整合
+2.1 模块整体架构
+Collection 方法按功能划分为 6 大类，整体依赖关系如下：
+plaintext
+数据库初始化 → Collection 实例获取 → CRUD 操作/查询操作 → 订阅数据变化 → 批量操作 → 数据迁移
+2.2 方法分类与详情
+2.2.1 基础初始化类（依赖 SQLiteAdapter）
+核心作用：完成数据库适配器、数据库实例、Collection 实例的初始化，为后续操作提供基础。
+方法 / 操作	作用	参数说明	返回值	示例代码
+SQLiteAdapter 初始化	配置数据库连接（名称、Schema、迁移策略等）	dbName：数据库名；schema：模型 Schema；migrations：迁移数组；jsi：是否启用 JSI	SQLiteAdapter 实例	javascript const adapter = new SQLiteAdapter({ dbName: 'WatermelonDBComplex', schema: mySchema, migrations: [], jsi: false });
+Database 实例创建	绑定适配器与模型类，生成数据库核心实例	adapter：上述适配器实例；modelClasses：模型类数组（如 [Project, Task]）	Database 实例	javascript export const database = new Database({ adapter, modelClasses: [Project, Task] });
+Collection 实例获取	从 Database 实例中获取指定模型的 Collection	modelName：模型名称（如 'projects'）	Collection 实例	javascript const projectsCollection = database.get('projects'); const tasksCollection = database.get('tasks');
+2.2.2 CRUD 操作类（核心业务方法）
+核心作用：实现单条 / 多条数据的新增、查询、更新、删除，所有写操作需包裹在 database.write 中保证原子性。
+方法	作用	参数说明	返回值	示例代码
+create	新增单条数据	data：数据对象（需包含模型字段）	新增的模型实例	javascript const newProject = await database.write(() => projectsCollection.create(project => { project.name = '新项目'; project.created_at = new Date(); }));
+find	按 ID 查询单条数据	id：数据唯一标识	模型实例 /undefined	javascript const project = await projectsCollection.find('proj_123');
+update	更新单条数据	id：数据 ID；updater：更新函数（修改模型字段）	更新后的模型实例	javascript const updatedProject = await database.write(() => projectsCollection.update('proj_123', project => { project.name = '修改后的项目名'; }));
+delete	删除单条数据	id：数据 ID	Promise<void>	javascript await database.write(() => projectsCollection.delete('proj_123'));
+findAll	按 ID 列表查询多条数据	ids：ID 数组（如 ['proj_1', 'proj_2']）	模型实例数组	javascript const projects = await projectsCollection.findAll(['proj_1', 'proj_2']);
+2.2.3 查询与筛选类（Query Builder 扩展）
+核心作用：构建复杂条件查询（多条件、排序、关联筛选），支持链式调用。
+方法 / 操作	作用	参数说明	返回值	示例代码
+query	初始化查询构建器	...conditions：查询条件（由 Q 构建）	Query 实例	javascript // 筛选指定项目下的未完成任务，按截止日期降序 const query = tasksCollection.query( Q.where('project_id', 'proj_123'), Q.where('completed', false), Q.sortBy('due_date', Q.desc) );
+extend	扩展查询条件	...conditions：新增查询条件	扩展后的 Query 实例	javascript // 新增“优先级>2”的条件 const extendedQuery = query.extend(Q.where('priority', Q.gt(2)));
+fetch	执行查询，返回数据列表	-	模型实例数组	javascript const filteredTasks = await extendedQuery.fetch();
+fetchCount	执行查询，返回数据总数	-	数字（数据条数）	javascript const taskCount = await extendedQuery.fetchCount();
+observe()	订阅查询结果（响应式）	-	Observable 实例	javascript const taskSub = extendedQuery.observe().subscribe(tasks => { setTaskList(tasks); });
+2.2.4 数据订阅类（响应式 UI 适配）
+核心作用：订阅数据变化（单条 / 多条），实现 UI 自动更新，需手动销毁订阅防止内存泄漏。
+方法	作用	参数说明	返回值	示例代码
+observe	订阅 Collection 所有数据	-	Observable 实例	javascript // 订阅所有项目变化 const sub = projectsCollection.observe().subscribe(projects => { setProjectList(projects); }); // 组件卸载时销毁 useEffect(() => { return () => sub.unsubscribe(); }, [sub]);
+observeById	订阅单条数据变化	id：数据 ID	Observable 实例	javascript const projectSub = projectsCollection.observeById('proj_123').subscribe(project => { setCurrentProject(project); });
+2.2.5 批量操作类（批量新增 / 导入）
+核心作用：适配种子数据导入、批量创建等场景，减少数据库交互次数。
+方法 / 操作	作用	参数说明	返回值	示例代码
+批量 create	批量创建数据	dataList：数据数组	模型实例数组	javascript // 批量创建任务 const seedTasks = async () => { return await database.write(() => { const tasks = [ { name: '任务1', project_id: 'proj_123' }, { name: '任务2', project_id: 'proj_123' } ]; return Promise.all(tasks.map(taskData => tasksCollection.create(task => { Object.assign(task, taskData); }))); }); };
+seedDemoData	导入示例种子数据	demoData：结构化种子数据（含多模型关联）	Promise<void>	javascript export const seedDemoData = async () => { await database.write(async () => { // 先创建项目 const project = await projectsCollection.create(p => { p.name = '示例项目'; }); // 再创建关联任务 await tasksCollection.create(t => { t.name = '示例任务'; t.project_id = project.id; }); }); };
+2.2.6 数据迁移类（Schema 升级适配）
+核心作用：适配数据库 Schema 变更（如新增字段、表），保证旧数据兼容。
+方法 / 操作	作用	参数说明	返回值	示例代码
+migrations 配置	定义迁移规则	migrations：迁移数组（每个迁移包含 toVersion 和 migrate 方法）	-	javascript const migrations = [ { toVersion: 2, migrate: async ({ schema }) => { // 为 tasks 表新增 priority 字段 await schema.addColumn('tasks', 'priority', 'number'); } }, { toVersion: 3, migrate: async ({ schema }) => { // 创建 subtasks 表 await schema.createTable('subtasks', table => { table.string('id').primary(); table.string('task_id'); table.string('name'); }); } } ];
+三、使用规范与最佳实践
+3.1 原子操作规范
+所有写操作（create/update/delete/ 批量创建）必须包裹在 database.write 中，避免部分操作失败导致数据不一致：
+javascript
+运行
+// 错误示例：未包裹 write
+await projectsCollection.create(p => { p.name = '错误示例'; });
+
+// 正确示例
+await database.write(() => {
+  projectsCollection.create(p => { p.name = '正确示例'; });
+});
+3.2 订阅销毁规范
+所有 observe 订阅必须在组件卸载 / 使用完毕后销毁，防止内存泄漏：
+javascript
+运行
+// React 组件中示例
+useEffect(() => {
+  const sub = projectsCollection.observe().subscribe(projects => {
+    setProjects(projects);
+  });
+  // 组件卸载时销毁订阅
+  return () => sub.unsubscribe();
+}, []);
+3.3 查询优化最佳实践
+避免频繁执行相同查询：缓存 Query 实例，仅在条件变化时重新构建；
+关联查询优先使用 Q.where 筛选外键（如 project_id），而非内存中过滤；
+大数据量查询时，使用 fetch 而非 observe（减少订阅开销）；
+禁用 JSI（jsi: false）以兼容多环境，性能敏感场景可开启 JSI。
+3.4 多模型关联操作规范
+关联模型（如 Project → Task → Subtask）操作时，需保证外键一致性：
+javascript
+运行
+// 创建任务时关联项目ID
+await database.write(async () => {
+  const project = await projectsCollection.create(p => { p.name = '关联项目'; });
+  // 任务外键关联项目ID
+  await tasksCollection.create(t => {
+    t.name = '关联任务';
+    t.project_id = project.id; // 保证外键一致
+  });
+});
+四、异常处理
+4.1 常见异常类型
+异常类型	触发场景	处理方案
+NotFoundError	调用 find/update/delete 时 ID 不存在	前置校验 ID 有效性，或捕获异常提示 “数据不存在”
+ConstraintError	违反字段约束（如外键不存在、必填字段为空）	操作前校验字段完整性，关联字段需确认关联数据存在
+MigrationError	数据迁移失败（如 Schema 不兼容）	迁移前备份数据，迁移函数中增加异常捕获，打印详细日志
+WriteError	原子操作中部分步骤失败	捕获异常后回滚操作，提示用户 “操作失败，请重试”
+4.2 通用异常捕获示例
+javascript
+运行
+try {
+  await database.write(async () => {
+    await tasksCollection.create(t => {
+      t.name = '测试任务';
+      t.project_id = '无效ID'; // 触发外键约束异常
+    });
+  });
+} catch (error) {
+  if (error.name === 'ConstraintError') {
+    console.error('关联项目不存在:', error);
+    // 前端提示用户
+    showToast('关联项目不存在，请选择有效项目');
+  } else {
+    console.error('数据操作失败:', error);
+    showToast('操作失败，请重试');
+  }
+}
+五、附录
+5.1 术语补充
+术语	补充说明
+JSI	JavaScript Interface，WatermelonDB 高性能模式，直接调用原生代码，禁用后兼容更多环境
+Schema	数据库表结构定义，包含模型名称、字段、索引等
+外键	关联其他模型的字段（如 Task 的 project_id 关联 Project 的 id）
