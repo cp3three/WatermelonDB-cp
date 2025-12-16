@@ -4,6 +4,7 @@ import { View, Text, Button, StyleSheet } from 'react-native';
 import FetchTestScreen from './FetchTestScreen';
 import ObserveMethodTest from './ObserveMethodTest';
 import MarkAllAsDeletedTest from './MarkAllAsDeletedTest';
+import QueryMetadataTest from './QueryMetadataTest';
 import { DatabaseProvider } from '@react-native-ohos/watermelondb/react';
 import { database } from './database';
 
@@ -21,6 +22,8 @@ export default function WatermelonDBQueryTest() {
         return <ObserveMethodTest />;
       case 'markAll':
         return <MarkAllAsDeletedTest />;
+      case 'metadata':
+        return <QueryMetadataTest />;
       default: // home
         return (
           <View style={styles.container}>
@@ -38,6 +41,11 @@ export default function WatermelonDBQueryTest() {
             <Button
               title="进入markAllAsDelted测试页面"
               onPress={() => setCurrentScreen('markAll')}
+              style={styles.button}
+            />
+            <Button
+              title="进入QueryMetadataTest测试页面"
+              onPress={() => setCurrentScreen('metadata')}
               style={styles.button}
             />
           </View>

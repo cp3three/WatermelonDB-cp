@@ -6,6 +6,7 @@ import WatermelonDBSimpleBase from './WaterDatabase';
 import LocalStorageTest from './WaterLocalStorage'; 
 import CollectionMapTestPage from './WatermelonDBCollectionMap'; 
 import WatermelonRelaDemo from './WatermelonDBSimple'; 
+import SchemaExample from './schemaTests/SchemaTestScreen'; // 新增测试页面
 
 // 主入口组件
 export default function MainPage() {
@@ -27,6 +28,8 @@ export default function MainPage() {
         return <LocalStorageTest />;
       case 'realtion':
         return <WatermelonRelaDemo />;
+      case 'schema':
+        return <SchemaExample />;
       default: // home
         return (
           <View style={styles.container}>
@@ -59,6 +62,11 @@ export default function MainPage() {
             <Button
               title="进入Relation测试页面"
               onPress={() => setCurrentScreen('realtion')}
+              style={styles.button}
+            />
+            <Button
+              title="进入Schema测试页面"
+              onPress={() => setCurrentScreen('schema')}
               style={styles.button}
             />
           </View>
